@@ -1,4 +1,7 @@
-dataset/*
+dataset/
+DATA/
+dataset_pos/
+dataset_text/
 !dataset/.gitkeep
 *.pt
 __pycache__/
@@ -20,3 +23,5 @@ end2end_generation/results/*
 word_rate/results/*
 trash/
 paper/
+myenv/
+figures

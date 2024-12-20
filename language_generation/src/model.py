@@ -6,20 +6,22 @@ from torch.utils.data import DataLoader
 import tqdm
 import torch.optim as optim
 import json
-import wandb 
+import wandb
 import torch.optim.lr_scheduler as lr_scheduler
 import random
 try:
     from settings import model_name2path, model2hidden
     from model_utils import Prompt_model
+    # from prompt_with_pos_model import Prompt_model
     from optimizer import Adam16
     from GPT import GPT, GPT_Tokenizer
 except:
     from src.settings import model_name2path, model2hidden
     from src.model_utils import Prompt_model
+    # from prompt_with_pos_model import Prompt_model
     from src.optimizer import Adam16
     from src.GPT import GPT, GPT_Tokenizer
-    
+
 class Decoding_model:
     def put_data_into_cuda(self, content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask, ):
         content_prev, content_prev_sep, content_true, content_prev_mask, content_true_mask = content_prev.to(self.device), content_prev_sep.to(self.device), content_true.to(self.device), content_prev_mask.to(self.device), content_true_mask.to(self.device)
@@ -35,10 +37,11 @@ class Decoding_model:
         if self.args['model_name'] in ['llama-7b',]:
             additional_bs = additional_bs.half()
         return content_prev, additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask
-    
+
     def __init__(self, args):
         # load model
-        self.device = torch.device(f"cuda:{args['cuda']}")
+        # self.device = torch.device(f"cuda:{args['cuda']}")
+        self.device = torch.device("cpu")
         self.args = args
         if args['model_name'] in ['llama-7b',]:
             if args['model_name'] in model_name2path.keys():
@@ -53,7 +56,7 @@ class Decoding_model:
             path = f"{model_name2path[args['model_name']]}/model"
             self.GPT = GPT(vocab=vocab, path=path, device=self.device,)
             self.model = self.GPT.model
-            self.tokenizer = GPT_Tokenizer(gpt=self.GPT)      
+            self.tokenizer = GPT_Tokenizer(gpt=self.GPT)
         elif 'gpt' in args['model_name']:
             if args['model_name'] in model_name2path.keys():
                 self.tokenizer = GPT2Tokenizer.from_pretrained(model_name2path[args['model_name']])
@@ -67,7 +70,7 @@ class Decoding_model:
         else:
             self.tokenizer.eos_token = self.tokenizer.mask_token
             self.tokenizer.pad_token = self.tokenizer.mask_token
-        
+
         if len(args['roi_selected']) > 0:
             self.new_tokens = []
             for k in range(len(args['roi_selected'])):
@@ -89,19 +92,19 @@ class Decoding_model:
                 new_token_id = self.tokenizer.convert_tokens_to_ids(f"{new_token}")
                 if 'gpt2' in self.args['model_name']:
                     self.model.transformer.wte.weight[new_token_id].requires_grad = True
-                elif 'llama' in self.args['model_name']: 
+                elif 'llama' in self.args['model_name']:
                     self.model.model.embed_tokens.weight[new_token_id].requires_grad = True
                 elif 'huth' in self.args['model_name']:
                     self.model.transformer.tokens_embed.weight[new_token_id].requires_grad = True
         self.model = self.model.to(self.device)
         self.prompt_model = Prompt_model(args, self.model, self.tokenizer, self.device, self.new_tokens,)
         self.max_norm = 0.1 if args['model_name'] in ['llama-7b','llama-7b-old'] else 10
-        
+
         if args['load_check_point']:
             self.load_check_point()
         else:
             self.prompt_model.init_encoding_model()
-        
+
     def freeze_model(self,):
         for param in self.model.parameters():
             param.requires_grad = False
@@ -110,16 +113,16 @@ class Decoding_model:
         re = {'new_tokens':[]}
         for new_token in self.new_tokens:
             re['new_tokens'] = self.prompt_model.token_weights.detach()
-        
+
         if self.args['enable_grad']:
             re['total_model'] = self.model.state_dict()
-        
+
         if type(self.prompt_model.encoding_model) != list:
             re['encoding_model'] = self.prompt_model.encoding_model.state_dict()
         else:
             re['encoding_model'] = [item.state_dict() for item in self.prompt_model.encoding_model]
         return re
-    
+
     # todo: it is difficult to calculate the uncertainty because the sequence has too many samples?
     # use the not rational setting and see if it works
     def get_entrophy(self,output, content_all_mask, content_all, content_true_mask, split=False):
@@ -129,7 +132,7 @@ class Decoding_model:
             return -np.sum(p * np.log2(p))
         logits = output.logits[:, :-1, :] # b * seq_all-1 * logits
         content_all_mask = content_all_mask[:,1:]
-        
+
         labels_mask = torch.zeros(content_all_mask.shape)
         content_true_mask_sum = torch.sum(content_true_mask, dim=1).int()
         content_all_mask_sum = torch.sum(content_all_mask, dim=1).int()
@@ -152,9 +155,9 @@ class Decoding_model:
     def get_loss(self, output, content_all_mask, content_all, content_true_mask, split=False):
         logits = output.logits[:, :-1, :] # b * seq_all-1 * logits
         content_all_mask = content_all_mask[:,1:]
-        
+
         labels_mask = torch.zeros(content_all_mask.shape)
-        content_true_mask_sum = torch.sum(content_true_mask, dim=1).int()            
+        content_true_mask_sum = torch.sum(content_true_mask, dim=1).int()
         content_all_mask_sum = torch.sum(content_all_mask, dim=1).int()
         for batch_id in range(labels_mask.shape[0]):
             labels_mask[batch_id][content_all_mask_sum[batch_id]-content_true_mask_sum[batch_id]:content_all_mask_sum[batch_id]] = 1
@@ -176,10 +179,10 @@ class Decoding_model:
     def load_check_point(self, path=None):
         if path is None:
             path = f'{self.args["llm_model_path"]}/model.pt'
-        re = torch.load(path, map_location=torch.device('cpu'))
+        re = torch.load(path, map_location=torch.device("cpu"))
         if self.args['enable_grad']:
             self.model.load_state_dict(re['total_model'])
-        self.prompt_model.token_weights.data = re['new_tokens'].detach().to(self.device)        
+        self.prompt_model.token_weights.data = re['new_tokens'].detach().to(self.device)
         self.check_point = re
         self.prompt_model.check_point = re
         self.prompt_model.init_encoding_model()
@@ -187,7 +190,7 @@ class Decoding_model:
     def get_distribute_loss(self, output, content_all_mask, content_all, content_true_mask, split=False, top_k = 100):
         logits = output.logits[:, :-1, :] # b * seq_all-1 * logits
         content_all_mask = content_all_mask[:,1:]
-        
+
         labels_mask = torch.zeros(content_all_mask.shape)
         content_true_mask_sum = torch.sum(content_true_mask, dim=1).int()
         content_all_mask_sum = torch.sum(content_all_mask, dim=1).int()
@@ -222,9 +225,9 @@ class Decoding_model:
         for content_prev, additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask, content_all, content_all_mask in tqdm.tqdm(test_dataloader, mininterval=300):
             content_prev, additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev, additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)
             content_all, content_all_mask = content_all.to(self.device), content_all_mask.to(self.device)
-            
+
             output, content_all_mask = self.prompt_model(content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=False,mode='test')
-            loss_list, info = self.get_distribute_loss(output, content_all_mask, content_true, content_true_mask, split=True) 
+            loss_list, info = self.get_distribute_loss(output, content_all_mask, content_true, content_true_mask, split=True)
             for loss in loss_list:
                 re['valid_loss'].append(loss.item())
             for item in info:
@@ -247,10 +250,10 @@ class Decoding_model:
                 output, content_all_mask = self.prompt_model(content_true, content_true_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=False)
             else:
                 output, content_all_mask = self.prompt_model(content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=False)
-            loss_list = self.get_loss(output, content_all_mask, content_true, content_true_mask, split=True) 
+            loss_list = self.get_loss(output, content_all_mask, content_true, content_true_mask, split=True)
             for loss in loss_list:
                 re.append(loss.item())
-        return re 
+        return re
 
     def test(self, test_dataset, file_name=None):
         test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=1)
@@ -263,7 +266,7 @@ class Decoding_model:
             content_all, content_all_mask = content_all.to(self.device), content_all_mask.to(self.device)
             all_predicted_tokens = self.prompt_model.generate(content_prev, content_prev_mask, additional_bs, additional_bs_mask, content_prev_sep,mode='test')
             data_id = data_id.numpy().tolist()
-            
+
             for i in range(content_all.shape[0]):
                 re['content_true'].append(self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(content_true[i])).replace('<|endoftext|>','').replace('⁇','').replace('</s>','').replace('<unk>','').strip())
                 predicted_tokens = all_predicted_tokens[i]
@@ -275,7 +278,7 @@ class Decoding_model:
                         try:
                             content_pred_tokens.append(self.tokenizer.convert_ids_to_tokens([item])[0])
                         except:
-                            continue    
+                            continue
                 re['content_pred_token_ids'].append([item.detach().cpu().numpy().tolist() for item in predicted_tokens])
                 re['content_pred'].append(self.tokenizer.convert_tokens_to_string(content_pred_tokens))
                 re['content_prev'].append(self.tokenizer.convert_tokens_to_string(self.tokenizer.convert_ids_to_tokens(content_prev[i])).replace('<|endoftext|>','').replace('⁇','').replace('</s>','').replace('<unk>','').strip())
@@ -287,9 +290,9 @@ class Decoding_model:
             else:
                 output, content_all_mask2 = self.prompt_model(content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=False)
             if self.args['loss'] == 'all':
-                loss_list = self.get_loss(output, content_all_mask2, content_all, content_all_mask, split=True) 
+                loss_list = self.get_loss(output, content_all_mask2, content_all, content_all_mask, split=True)
             else:
-                loss_list = self.get_loss(output, content_all_mask2, content_true, content_true_mask, split=True) 
+                loss_list = self.get_loss(output, content_all_mask2, content_true, content_true_mask, split=True)
             for loss in loss_list:
                 re['valid_loss'].append(loss.item())
             if len(re['content_pred']) > 10 and self.args['mode'] in ['train','evaluate_test']:
@@ -302,28 +305,28 @@ class Decoding_model:
                     f.write('content_pred: '+re['content_pred'][i] + '\n')
                     f.write('content_true: '+re['content_true'][i] + '\n')
                     f.write('-----------------------------\n')
-            
+
             json.dump(re, open(self.args['checkpoint_path']+'/'+file_name+'.json', 'w'))
 
     def pre_train(self, dataset, dataloader, optimizer, parameters, epoch = 0):
         # optimizer = optim.SGD(filter(lambda p: p.requires_grad, parameters), lr=self.args['pretrain_lr'])
         total_additional_loss = 0
         for content_prev, additional_bs, content_prev_sep, content_true,content_prev_mask,content_true_mask, content_all, content_all_mask, data_id in tqdm.tqdm(dataloader, mininterval=300):
-            content_prev, additional_bs,content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)   
+            content_prev, additional_bs,content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)
             additional_loss = self.prompt_model.additional_loss(content_prev, content_prev_mask, additional_bs)
             total_additional_loss += additional_loss.item()
             optimizer.zero_grad()
             additional_loss.backward()
             torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, parameters), max_norm=self.max_norm)
             optimizer.step()
-            
+
         return total_additional_loss / len(dataset)
 
-    def train(self, train_dataset, valid_dataset, test_dataset=None):  
+    def train(self, train_dataset, valid_dataset, test_dataset=None):
         test_dataloader = DataLoader(test_dataset, batch_size = self.args['batch_size'], shuffle=False, num_workers=1) if test_dataset is not None else None
-        train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1) 
-        valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1) 
-        
+        train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
+        valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
+
         best_loss = 100000000000
         # 改了early stop
         early_stop = self.args['early_stop']
@@ -338,12 +341,12 @@ class Decoding_model:
         scheduler = lr_scheduler.StepLR(optimizer, step_size=1, gamma=self.args['weight_decay'])
 
         pretrain_optimizer = optim.Adam(filter(lambda p: p.requires_grad, parameters), lr=self.args['pretrain_lr'], weight_decay=self.args['l2']) if self.args['model_name'] not in ['llama-7b','llama-7b-old'] else Adam16(filter(lambda p: p.requires_grad, parameters), lr=self.args['pretrain_lr'], weight_decay=self.args['l2'])
-        
+
         for epoch in range(self.args['pretrain_epochs']):
             self.prompt_model.train()
             total_loss = self.pre_train(train_dataset, train_dataloader, pretrain_optimizer, parameters, epoch=epoch)
             valid_loss = self.pre_train(valid_dataset, valid_dataloader, pretrain_optimizer, parameters, epoch=epoch)
-            
+
             if test_dataloader is not None:
                 self.pre_train(test_dataset, test_dataloader, optimizer, pretrain_optimizer, parameters)
             output_str = f"Pretraining Epoch {epoch}: Trainning Loss = {total_loss:.3f} Validation Loss = {valid_loss:.3f}"
@@ -351,7 +354,7 @@ class Decoding_model:
                 fw.write(output_str+'\n')
             if self.args['wandb'] != 'none':
                 wandb.log({"pre_train Trainning Loss": total_loss, "pre_train Validation Loss": valid_loss})
-            
+
         for epoch in range(self.args['num_epochs']):
             if self.args['additional_loss'] > 0:
                 total_additional_loss = 0
@@ -359,11 +362,11 @@ class Decoding_model:
             self.prompt_model.train()
             if 'Narratives' in self.args['task_name'] and 'person' not in self.args['task_name']:
                 random.shuffle(train_dataset.inputs)
-                train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1) 
+                train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
             for content_prev, additional_bs, content_prev_sep, content_true,content_prev_mask,content_true_mask, content_all, content_all_mask, data_id in tqdm.tqdm(train_dataloader, mininterval=300):
-                content_prev, additional_bs,content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)   
+                content_prev, additional_bs,content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)
                 content_all, content_all_mask = content_all.to(self.device), content_all_mask.to(self.device)
-                
+
                 if self.args['input_method'] == 'without_text':
                     output, content_all_mask2 = self.prompt_model(content_true, content_true_mask, additional_bs, additional_bs_mask, content_prev_sep,)
                 else:
@@ -378,7 +381,7 @@ class Decoding_model:
                     continue
                 if self.args['additional_loss'] > 0:
                     additional_loss1 = self.prompt_model.additional_loss(content_prev, content_prev_mask, additional_bs)
-                    valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1) 
+                    valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
                     for content_prev_v, additional_bs_v, v_1, v_2,content_prev_mask_v,v_3, v_4, v_5 in valid_dataloader:
                         if self.args['model_name'] in ['llama-7b', 'vicuna-7b', 'llama-7b-old']:
                             additional_bs_v = additional_bs_v.half()
@@ -394,7 +397,7 @@ class Decoding_model:
                 torch.nn.utils.clip_grad_norm_(filter(lambda p: p.requires_grad, parameters), max_norm=10.0)
                 optimizer.step()
                 total_loss += loss.item()
-            
+
             total_loss /= len(train_dataset)
             if self.args['additional_loss'] > 0:
                 total_additional_loss /= len(train_dataset)
@@ -453,7 +456,7 @@ class Decoding_model:
 
 
 if __name__ == '__main__':
-    args = {'model_name':'gpt2','brain_embed_size':1000, 'word_embed_size':768,'cuda':5}
+    args = {'model_name':'gpt2','brain_embed_size':1000, 'word_embed_size':768,'cuda':0}
     decoding_model = Decoding_model(args)
 
 

@@ -10,14 +10,14 @@ class MyStandardScaler:
     def __init__(self):
         self.mean = 0
         self.std = 0
-    
+
     def fit(self, X):
         self.mean = np.mean(X, axis=0)
         self.std = np.std(X, axis=0)
-    
+
     def transform(self, X):
         return (X - self.mean) / self.std
-    
+
     def fit_transform(self, X):
         self.fit(X)
         return self.transform(X)
@@ -28,7 +28,8 @@ except:
 
 class Splited_FMRI_dataset(Dataset):
     def __init__(self,inputs,most_epoch=-1, args = None):
-        self.device = torch.device(f"cuda:{args['cuda']}")
+        # self.device = torch.device(f"cuda:{args['cuda']}")
+        self.device = torch.device("cpu")
         self.inputs = inputs
         self.most_epoch = most_epoch
         self.args = args
@@ -39,7 +40,7 @@ class Splited_FMRI_dataset(Dataset):
     def __getitem__(self, idx):
         input_sample = self.inputs[idx]
         return (
-                input_sample['content_prev'], 
+                input_sample['content_prev'],
                 input_sample['additional_bs'],
                 input_sample['content_prev_sep'],
                 input_sample['content_true'],
@@ -68,36 +69,36 @@ class FMRI_dataset():
         for item in input_dataset:
             mask_half_tokens(item['content_prev'], new_token_id, self.args['noise_ratio'])
         return input_dataset
-    
+
     def pack_info(self, content_prev, additional_bs, content_true, trail_id,id):
         content_all = self.tokenizer.encode_plus(content_prev.strip()+' '+content_true, max_length=self.args['prev_mask_len'] + self.args['max_generate_len'], truncation=True, return_tensors='pt', add_special_tokens = self.add_special_tokens, padding='max_length')
         content_true = self.tokenizer.encode_plus(content_true if self.args['model_name'] in ['llama-7b',] else ' '+content_true, max_length=self.args['max_generate_len'], add_special_tokens = self.add_special_tokens, truncation=True, return_tensors='pt',padding='max_length')
         content_prev = self.tokenizer.encode_plus(content_prev.strip(), max_length=self.args['prev_mask_len'], truncation=True, return_tensors='pt', add_special_tokens = self.add_special_tokens, padding='max_length')
-        
+
         return {
-                'content_prev': content_prev['input_ids'][0], 
-                'content_prev_mask': content_prev['attention_mask'][0], 
+                'content_prev': content_prev['input_ids'][0],
+                'content_prev_mask': content_prev['attention_mask'][0],
                 'additional_bs':torch.tensor(additional_bs, dtype=torch.float32),
-                'content_prev_sep':self.tokenizer.encode_plus(['<brain/>', '</brain>'],return_tensors='pt')['input_ids'][0], 
-                'content_true': content_true['input_ids'][0], 
-                'content_true_mask': content_true['attention_mask'][0], 
+                'content_prev_sep':self.tokenizer.encode_plus(['<brain/>', '</brain>'],return_tensors='pt')['input_ids'][0],
+                'content_true': content_true['input_ids'][0],
+                'content_true_mask': content_true['attention_mask'][0],
                 'trail_id': trail_id,
                 'content_all': content_all['input_ids'][0],
                 'content_all_mask': content_all['attention_mask'][0],
                 'id':id
             }
-    
+
     def normalized(self, dic_pere):
         all_data = []
         for story in dic_pere.keys():
             all_data.append(np.array(dic_pere[story]['fmri']))
-        all_data = np.concatenate(all_data, axis=0) 
+        all_data = np.concatenate(all_data, axis=0)
         all_data = self.scaler.fit_transform(all_data)
         start_idx = 0
         for story in dic_pere.keys():
             dic_pere[story]['fmri'] = all_data[start_idx:start_idx+dic_pere[story]['fmri'].shape[0]]
-            start_idx += dic_pere[story]['fmri'].shape[0] 
-    
+            start_idx += dic_pere[story]['fmri'].shape[0]
+
     def __init__(self, input_dataset, args, tokenizer,decoding_model=None):
         self.decoding_model = decoding_model
         self.args = args
@@ -128,7 +129,7 @@ class FMRI_dataset():
                         packed_info = self.pack_info(content_prev, additional_bs, content_true, random_number, id = tmp_id)
                         tmp_id += 1
                         if torch.sum(packed_info['content_true_mask']) > 0:
-                            self.inputs.append(packed_info)   
+                            self.inputs.append(packed_info)
         elif 'Narratives' in args['task_name']:
             subject_name = args['task_name'].split('_')[1]
             content_true2idx = {}
@@ -173,7 +174,7 @@ class FMRI_dataset():
                     packed_info = self.pack_info(content_prev.lower(), additional_bs, content_true.lower(), trail_id, id = tmp_id)
                     tmp_id += 1
                     self.inputs.append(packed_info)
-            
+
         elif 'Huth' in args['task_name']:
             dataset_name = args['task_name'].split('_')[0]
             subject_name = args['task_name'].split('_')[1]
@@ -210,16 +211,16 @@ class FMRI_dataset():
                             self.inputs = self.inputs[:-1]
         self.pack_data_from_input(args)
         json.dump(id2info, open(self.args['checkpoint_path']+'/'+'id2info.json', 'w'))
-    
+
         if args['use_bad_words_ids']:
             self.get_bad_word_ids()
             self.decoding_model.prompt_model.bad_words_ids = np.array(self.bad_word_ids).reshape(-1,1).tolist()
-    
+
     def get_bad_word_ids(self,):
         vocabulary = np.unique([item['content_true'] for item in self.test])
         print('length of vocabulary: ', len(vocabulary))
         self.bad_word_ids = np.setdiff1d(np.array(list(self.tokenizer.get_vocab().values())), vocabulary)
-    
+
     def pack_data_from_input(self, args, ):
         self.train = []
         self.test = []
@@ -242,7 +243,7 @@ class FMRI_dataset():
         if args['data_size'] != -1:
             random.shuffle(self.train)
             self.train = self.train[:args['data_size']]
-        
+
         self.train_dataset = Splited_FMRI_dataset(self.train, args = args)
         self.valid_dataset = Splited_FMRI_dataset(self.valid, args = args) if len(self.valid) > 0 else Splited_FMRI_dataset(self.test, args = args)
         self.test_dataset = Splited_FMRI_dataset(self.test, args = args)

@@ -14,15 +14,15 @@ class MLP(torch.nn.Module):
         if self.args['input_method'] == 'mask_input':
             self.position_embedding = nn.Parameter(torch.empty(max_seq_len, num_classes), requires_grad=True)
             nn.init.uniform_(self.position_embedding, -1, 1)
-        elif position_index:   
-            self.position_embedding = nn.Parameter(torch.empty(max_seq_len, embedding_size), requires_grad=True) # 
+        elif position_index:
+            self.position_embedding = nn.Parameter(torch.empty(max_seq_len, embedding_size), requires_grad=True) #
             nn.init.uniform_(self.position_embedding, -1, 1)
         net = nn.Sequential()
         num_layers = args['num_layers']
         for i in range(num_layers):
             if i==0:
                 if args['pos']:
-                    net.add_module(f'linear{i+1}',nn.Linear(self.num_input,num_input,bias=False, dtype=torch.float32))    
+                    net.add_module(f'linear{i+1}',nn.Linear(self.num_input,num_input,bias=False, dtype=torch.float32))
                 else:
                     net.add_module(f'linear{i+1}',nn.Linear(self.num_input,num_input, dtype=torch.float32))
             else:
@@ -63,7 +63,7 @@ class RNN(nn.Module):
     def forward(self, input_vec,position_index=False):
         batch_size = input_vec.size(0)
         hidden = self.init_hidden(batch_size)
-        output, hidden = self.rnn(input_vec, hidden) # b*seq*dim; 
+        output, hidden = self.rnn(input_vec, hidden) # b*seq*dim;
         output = self.fc(output)
         return output
 
@@ -83,7 +83,7 @@ class Linear(nn.Module):
 
     def forward(self, input, position_index = False):
         return self.linear(input)
-         
+
 
 class MultiMLP(nn.Module):
     def __init__(self,num_input,num_classes,position_index=False,num_layers = 2, args=None):
@@ -91,7 +91,8 @@ class MultiMLP(nn.Module):
         seq_len = 4
         self.mlps = nn.ModuleList([MLP(num_input, num_classes,position_index = False, args = args) for _ in range(seq_len)])
         self.num_classes = num_classes
-        self.device = torch.device(f'cuda:{args["cuda"]}')
+        # self.device = torch.device(f'cuda:{args["cuda"]}')
+        self.device = torch.device("cpu")
     def forward(self, x,position_index=False):
         batch_size, seq_len, dim = x.size()
         out = torch.zeros(batch_size, seq_len, self.num_classes, device=self.device)
@@ -115,22 +116,42 @@ class BigMLP(nn.Module):
         x = x.view(batch_size, self.seq_len, -1)
         return x
 
+# class Encoding_model(nn.Module):
+#     def __init__(self, args,brain_embed_size=None,device=None):
+#         super(Encoding_model, self).__init__()
+#         if brain_embed_size is None:
+#             brain_embed_size = args['brain_embed_size']
+#         if args['brain_model'] == 'multi_mlp':
+#             self.model = MultiMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
+#         elif args['brain_model'] == 'big_mlp':
+#             self.model = BigMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
+#         elif args['brain_model'] == 'linear':
+#             self.model = Linear(brain_embed_size,args['word_embed_size'], args,)
+#         elif args['brain_model'] == 'mlp':
+#             self.model = MLP(brain_embed_size,args['word_embed_size'],position_index = args['pos'], args = args)
+#         elif args['brain_model'] == 'rnn':
+#             self.model = RNN(brain_embed_size,args['word_embed_size'], device)
+
+#     def forward(self, x, position_index = False):
+#         # x: batch_size * seq_len * dim
+#         return self.model(x, position_index = position_index)
+
 class Encoding_model(nn.Module):
-    def __init__(self, args,brain_embed_size=None,device=None):
+    def __init__(self, args, brain_embed_size=None, device=None, pos_vocab_size=50):
         super(Encoding_model, self).__init__()
         if brain_embed_size is None:
             brain_embed_size = args['brain_embed_size']
-        if args['brain_model'] == 'multi_mlp':
-            self.model = MultiMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
-        elif args['brain_model'] == 'big_mlp':
-            self.model = BigMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
-        elif args['brain_model'] == 'linear':
-            self.model = Linear(brain_embed_size,args['word_embed_size'], args,)
-        elif args['brain_model'] == 'mlp':
-            self.model = MLP(brain_embed_size,args['word_embed_size'],position_index = args['pos'], args = args)
-        elif args['brain_model'] == 'rnn':
-            self.model = RNN(brain_embed_size,args['word_embed_size'], device)
-            
-    def forward(self, x, position_index = False):
-        # x: batch_size * seq_len * dim
-        return self.model(x, position_index = position_index)
+        self.device = device
+        self.pos_embedding = nn.Embedding(pos_vocab_size, args['word_embed_size'])  # POSタグのエンベディング層
+        self.brain_mlp = nn.Linear(brain_embed_size, args['word_embed_size'])  # 脳情報のエンベディング層
+        self.combiner = nn.Linear(args['word_embed_size'] * 2, args['word_embed_size'])  # 統合層
+
+    def forward(self, brain_features, pos_tags):
+        # 脳情報をエンベディング
+        brain_embeds = self.brain_mlp(brain_features)
+        # POSタグをエンベディング
+        pos_embeds = self.pos_embedding(pos_tags)
+        # 統合（単純な結合 + 線形変換）
+        combined_features = torch.cat((brain_embeds, pos_embeds), dim=-1)
+        combined_embeds = self.combiner(combined_features)
+        return combined_embeds
