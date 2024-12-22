@@ -45,7 +45,7 @@ def process_pos_tags(file_path):
 #     return tokens_with_pos
 
 class Prompt_model(nn.Module):
-    def __init__(self, args, new_tokens, pos_vocab_size=50):
+    def __init__(self, args, new_tokens, pos_vocab_size=75):
         super(Prompt_model, self).__init__()
 
         self.args = args
@@ -53,7 +53,6 @@ class Prompt_model(nn.Module):
         self.tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
         self.mse_loss = nn.MSELoss()
         self.pos_vocab_size = pos_vocab_size
-        self.embedding_dim = self.model.config.hidden_size
 
         if args['model_name'] == 'gpt2':
             self.model = GPT2LMHeadModel.from_pretrained("gpt2")
@@ -63,7 +62,8 @@ class Prompt_model(nn.Module):
             self.embedding_layer = self.model.model.embed_tokens
         else:
             raise ValueError(f"Unsupported model_name: {args['model_name']}")
-        self.model.to(self.device)
+        self.model = self.model.to(self.device)
+        self.embedding_dim = self.model.config.hidden_size
 
         self._resize_token_embeddings(new_tokens)
 
@@ -78,6 +78,7 @@ class Prompt_model(nn.Module):
             else:
                 raise ValueError(f"Unsupported model_name: {self.args['model_name']}")
             tmp_weights.append(tmp_weight)
+        self.token_weights = nn.Parameter(torch.stack(tmp_weights), requires_grad=True)
 
     def _resize_token_embeddings(self, new_tokens):
         if new_tokens:

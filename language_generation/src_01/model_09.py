@@ -126,7 +126,7 @@ class Decoding_model:
                 elif 'huth' in self.args['model_name']:
                     self.model.transformer.tokens_embed.weight[new_token_id].requires_grad = True
 
-        self.prompt_model = Prompt_model(self, args, new_tokens, pos_vocab_size=50)
+        self.prompt_model = Prompt_model(args, self.new_tokens, pos_vocab_size=75)
         self.max_norm = 0.1 if args['model_name'] in ['llama-7b','llama-7b-old'] else 10
 
         if args['load_check_point']:
