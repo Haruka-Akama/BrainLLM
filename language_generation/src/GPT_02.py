@@ -14,17 +14,17 @@ class GPT_Tokenizer():
         self.pad_token_id = self.word2id[self.pad_token]
         self.eos_token_id = self.word2id[self.eos_token]
         self.id2word = dict((v,k) for k,v in self.word2id.items())
-        
+
     def encode_plus(self, words, max_length=None, truncation=True, padding='max_length', return_tensors=None, add_special_tokens=None):
         if type(words) is str:
             words = words.split()
         if max_length is None:
             max_length = len(words)
-        # 将单词转换为id
+        # Convert words to ids
         input_ids = [self.word2id[x] if x in self.word2id else self.pad_token_id for x in words]
-        # 创建attention_mask
+        # Generate attention_mask
         attention_mask = [1] * len(input_ids)
-        # 截断和padding
+        # Truncate and pad
         if truncation and len(input_ids) > max_length:
             input_ids = input_ids[:max_length]
             attention_mask = attention_mask[:max_length]
@@ -32,7 +32,9 @@ class GPT_Tokenizer():
             padding_length = max_length - len(input_ids)
             input_ids = input_ids + [self.pad_token_id] * padding_length
             attention_mask = attention_mask + [0] * padding_length
-        # 将input_ids和attention_mask转换为tensor
+        # Ensure the shapes match
+        assert len(input_ids) == len(attention_mask), "Mismatch between input_ids and attention_mask lengths"
+        # Convert to tensors
         input_ids = torch.tensor([input_ids])
         attention_mask = torch.tensor([attention_mask])
         return {'input_ids': input_ids, 'attention_mask': attention_mask}
@@ -45,7 +47,7 @@ class GPT_Tokenizer():
             self.word2id[new_token] = len(self.vocab)
             self.vocab.append(new_token)
         self.id2word = dict((v,k) for k,v in self.word2id.items())
-        
+
     def convert_tokens_to_ids(self, token):
         if type(token) is str:
             return self.word2id[token]
@@ -57,17 +59,17 @@ class GPT_Tokenizer():
 
     def __len__(self, ):
         return len(self.vocab)
-    
+
     def convert_ids_to_tokens(self, input_ids):
         return [self.id2word[item.detach().cpu().numpy().tolist()] for item in input_ids]
-        
+
     def convert_tokens_to_string(self, input_tokens):
         return ' '.join(input_tokens)
 
-class GPT():    
+class GPT():
     """wrapper for https://huggingface.co/openai-gpt
     """
-    def __init__(self, path, vocab, device = 'cpu', prompt_model=None):  
+    def __init__(self, path, vocab, device = 'cpu', prompt_model=None):
         self.device = device
         self.model = AutoModelForCausalLM.from_pretrained(path).eval().to(self.device)
         self.vocab = vocab
@@ -80,12 +82,11 @@ class GPT():
 
     def state_dict(self,):
         return self.model.state_dict()
-    
+
     def load_state_dict(self, state_dict):
         return self.model.load_state_dict(state_dict)
-    
+
     def encode(self, words):
         """map from words to ids
         """
         return [self.word2id[x] if x in self.word2id else self.UNK_ID for x in words]
-        

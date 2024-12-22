@@ -29,9 +29,9 @@ def get_config():
     parser.add_argument('-random_number', default = 1, type = int, required=False)
     parser.add_argument('-batch_size', default = 1, type = int, required=False)
     parser.add_argument('-fmri_pca', default = "True" ,required=False)
-    parser.add_argument('-cuda', default = "0" ,required=False)
+    parser.add_argument('-cuda', default = "-1" ,required=False)
     parser.add_argument('-layer', type = int, default = -1 ,required=False)
-    parser.add_argument('-num_epochs',  type = int, default = 100 ,required=False)
+    parser.add_argument('-num_epochs',  type = int, default = 1 ,required=False)
     parser.add_argument('-lr',  type = float, default = 1e-3, required=False)
     parser.add_argument('-dropout',  type = float, default = 0.5, required=False)
     parser.add_argument('-brain_embed_size',  type = float, default = 1000, required=False)
@@ -71,14 +71,16 @@ def get_config():
     parser.add_argument('-max_generate_len', default = 32, type=int,required=False)
     parser.add_argument('-early_stop', default = 10, type=int,required=False)
     parser.add_argument('-use_bad_words_ids', default = 'False', type=str,required=False)
-    parser.add_argument('-repetition_penalty', default = 2.0, type=float, required=False)    
-    parser.add_argument('-ncontext', default = 10, type=int, required=False) 
-    parser.add_argument('-gcontext', default = 30, type=int, required=False) 
-    parser.add_argument('-use_decoder_vocab', default = 'True', type=str, required=False) 
-    parser.add_argument('-num_steps', default = 1000, type=int, required=False) 
-    parser.add_argument('-length_penalty', default = 0.3, type=float, required=False) 
-    parser.add_argument('-beam_width', default = 5, type=int, required=False) 
-    parser.add_argument('-extensions', default = 5, type=int, required=False) 
+    parser.add_argument('-repetition_penalty', default = 2.0, type=float, required=False)
+    parser.add_argument('-ncontext', default = 10, type=int, required=False)
+    parser.add_argument('-gcontext', default = 30, type=int, required=False)
+    parser.add_argument('-use_decoder_vocab', default = 'True', type=str, required=False)
+    parser.add_argument('-num_steps', default = 1000, type=int, required=False)
+    parser.add_argument('-length_penalty', default = 0.3, type=float, required=False)
+    parser.add_argument('-beam_width', default = 5, type=int, required=False)
+    parser.add_argument('-extensions', default = 5, type=int, required=False)
+    parser.add_argument('-pos_csv_path', type=str, help='Path to the POS CSV file', required=True)
+    parser.add_argument('-save_results', action='store_true', help="Flag to save evaluation results to file")
     args = vars(parser.parse_args())
     args['fmri_pca'] = args['fmri_pca'] == 'True'
     args['load_check_point'] = args['load_check_point'] == 'True'
@@ -98,27 +100,33 @@ def get_config():
             args[k] = v
     args['test_trail_ids'] = [args['test_trail_ids'][0]+args['random_number']*0.2, args['test_trail_ids'][1]+args['random_number']*0.2]
     args['valid_trail_ids'] = [args['valid_trail_ids'][0]+args['random_number']*0.2, args['valid_trail_ids'][1]+args['random_number']*0.2]
-    
+    args['test_trail_ids'] = [0.75, 1.0]
+    args['valid_trail_ids'] = [0.5, 0.75]
+
+    args['pos_csv_path'] = '/data1/akamaharuka/BrainLLM/dataset_pos/Pereira_M02_sentence_with_POS.csv'
+    args['checkpoint_path'] = 'language_generation/save'
+
     # set shuffle_times
     shuffle_times = 10 if 'Huth' not in args['task_name'] and 'Narratives' not in args['task_name'] else 1
     args['shuffle_times'] = shuffle_times if args['shuffle_times'] == 1 else shuffle_times
-    
+
     # manage checkpoint_path
     results_path =  args['results_path']
     if args['checkpoint_path'] == '':
-        args['checkpoint_path'] = f'../{results_path}/tmp'
+        args['checkpoint_path'] = 'language_generation/save'
     elif f'../{results_path}/' not in args['checkpoint_path']:
-        args['checkpoint_path'] = f'../{results_path}/' + args['checkpoint_path']
+        args['checkpoint_path'] = 'language_generation/save'
+
     if os.path.exists(args['checkpoint_path']) == False:
         os.makedirs(args['checkpoint_path'])
     args["llm_model_path"] = args['checkpoint_path']
-    
+
     print(args['checkpoint_path'])
-    
+
     # write info
     if args['mode'] in ['train', 'all', 'end2end']:
         json.dump(args, open(args['checkpoint_path']+'/info.json', 'w'))
-    
+
     # setting wandb environment
     os.environ['WANDB_MODE'] = args['wandb']
     os.environ['WANDB_MODE'] = 'offline'

@@ -1,53 +1,14 @@
 import torch
 import torch.nn as nn
 import random
-import csv
 try:
-    from top_model_utils import generate_beam
-    from sub_models import Encoding_model
+    from top_model_utils_06 import generate_beam
+    from sub_models_04 import Encoding_model
 except Exception as e:
     # print(e)
-    from src.top_model_utils import generate_beam
-    from src.sub_models import Encoding_model
+    from src.top_model_utils_06 import generate_beam
+    from src.sub_models_04 import Encoding_model
 
-def read_pos_tags(file_path):
-	pos_tags_list = []
-	with open(file_path, 'r') as file:
-		reader = csv.reader(file)
-		next(reader)  # ヘッダーをスキップ
-		for row in reader:
-			pos_tags = row[2]  # POSタグがCSVの3列目にあると仮定
-			pos_tags = eval(pos_tags.replace("(", "[").replace(")", "]"))  # タグをリスト形式に変換
-			pos_tags_list.append(pos_tags)
-	return pos_tags_list
-
-# CSVファイルのパスを指定
-file_path = "dataset_pos/Pereira_sentence_POS.csv"
-pos_tags_list = read_pos_tags(file_path)
-
-# POSタグ語彙辞書を作成
-unique_pos_tags = set(tag for tags in pos_tags_list for tag in tags)
-pos_tag_to_id = {tag: idx for idx, tag in enumerate(unique_pos_tags)}
-id_to_pos_tag = {idx: tag for tag, idx in pos_tag_to_id.items()}
-
-# POSタグをIDに変換
-def pos_tags_to_ids(pos_tags_list, pos_tag_to_id):
-	return [[pos_tag_to_id[tag] for tag in tags] for tags in pos_tags_list]
-
-pos_tags_ids = pos_tags_to_ids(pos_tags_list, pos_tag_to_id)
-
-def pad_pos_tags(pos_tags_ids, max_len, padding_value=0):
-    padded_pos_tags = []
-    for tags in pos_tags_ids:
-        if len(tags) < max_len:
-            padded_pos_tags.append(tags + [padding_value] * (max_len - len(tags)))
-        else:
-            padded_pos_tags.append(tags[:max_len])
-    return torch.tensor(padded_pos_tags)
-
-#max_tag数
-max_len = 75
-padded_pos_tags = pad_pos_tags(pos_tags_ids, max_len)
 
 class Prompt_model(nn.Module):
     def __init__(self, args, model, tokenizer, device,new_tokens,):
@@ -118,34 +79,40 @@ class Prompt_model(nn.Module):
         content_prev_sep[:,-2] = self.token_weights[-2]
         return content_prev_sep
 
-    def tokenize(self, content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, pos_tags, use_fake=True, mode='train'):
-        content_all = self.words2embedding(content_all)  # テキスト情報のエンベディング
-        content_prev_sep = self.get_tokens(content_prev_sep)  # セパレーターのエンベディング
+    def tokenize(self, content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=True,mode='train'):
+        content_all = self.words2embedding(content_all)
+        content_prev_sep = self.get_tokens(content_prev_sep)
 
-        if use_fake == False:
-            # POSタグを統合した脳情報エンベディング
-            if isinstance(additional_bs, list):  # 複数の脳情報がリストで渡される場合
+        if random.random() > self.args['fake_input'] or use_fake == False:
+            if type(additional_bs) == list:
                 additional_bs_tokenized = []
-                for i, bs in enumerate(additional_bs):
-                    additional_bs_tokenized.append(self.encoding_model(bs, pos_tags[:, i, :]))
-                    print ('additional_bsはリスト形式')
-            else:  # 単一の脳情報の場合
-                additional_bs_tokenized = self.encoding_model(additional_bs, pos_tags)
-                print ('additional_bsはテンソル形式')
+                for k in range(len(additional_bs)):
+                    additional_bs_tokenized.append(self.encoding_model[k](additional_bs[k]))
+            else:
+                additional_bs_tokenized = self.encoding_model(additional_bs, position_index = self.args['pos'])
         else:
-            # フェイクデータの場合はそのままテキストを使用
-            additional_bs_tokenized = self.words2embedding(content_all)
+            if type(additional_bs) == list:
+                additional_bs_tokenized = []
+                for k in range(len(additional_bs)):
+                    additional_bs_tokenized[k] = self.words2embedding(content_all)
+            else:
+                additional_bs_tokenized = self.words2embedding(content_all)
 
         if self.args['input_method'] == 'without_brain':
-            content_all_list = [content_all]
-            content_all_mask = content_all_mask
+            # notice this code
+            if self.args['model_name'] in ['llama-7b',]:
+                content_all_list = [self.get_prev(additional_bs_tokenized, content_prev_sep)[0]] + [content_all,]
+                content_all_mask = torch.cat([additional_bs_mask[:,:1], content_all_mask], dim=-1)
+            else:
+                content_all_list = [content_all,]
+        elif self.args['input_method'] == 'without_text' and mode in ['test']:
+            content_all_list = self.get_prev(additional_bs_tokenized, content_prev_sep)
+            content_all_mask = torch.cat([additional_bs_mask, ], dim=-1)
         else:
-            content_all_list = self.get_prev(additional_bs_tokenized, content_prev_sep) + [content_all]
+            content_all_list = self.get_prev(additional_bs_tokenized, content_prev_sep) + [ content_all,]
             content_all_mask = torch.cat([additional_bs_mask, content_all_mask], dim=-1)
-
         content_all = torch.cat(content_all_list, dim=-2)
         return content_all, content_all_mask
-
 
     def forward(self, content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake=True,mode='train'):
         content_all, content_all_mask = self.tokenize(content_all, content_all_mask, additional_bs, additional_bs_mask, content_prev_sep, use_fake,mode)

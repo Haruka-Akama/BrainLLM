@@ -9,8 +9,8 @@ nltk.download('punkt')
 nltk.download('averaged_perceptron_tagger')
 
 # ファイルパスの設定
-input_file = "dataset_text/Pereira_sentence.csv"
-output_file = "dataset_pos/Pereira_sentence_POS.csv"
+input_file = " "
+output_file = "dataset_pos/test_sentence_POS.csv"
 
 # CSVファイルの読み込み
 df = pd.read_csv(input_file)

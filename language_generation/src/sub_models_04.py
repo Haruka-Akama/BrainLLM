@@ -116,42 +116,63 @@ class BigMLP(nn.Module):
         x = x.view(batch_size, self.seq_len, -1)
         return x
 
-# class Encoding_model(nn.Module):
-#     def __init__(self, args,brain_embed_size=None,device=None):
-#         super(Encoding_model, self).__init__()
-#         if brain_embed_size is None:
-#             brain_embed_size = args['brain_embed_size']
-#         if args['brain_model'] == 'multi_mlp':
-#             self.model = MultiMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
-#         elif args['brain_model'] == 'big_mlp':
-#             self.model = BigMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
-#         elif args['brain_model'] == 'linear':
-#             self.model = Linear(brain_embed_size,args['word_embed_size'], args,)
-#         elif args['brain_model'] == 'mlp':
-#             self.model = MLP(brain_embed_size,args['word_embed_size'],position_index = args['pos'], args = args)
-#         elif args['brain_model'] == 'rnn':
-#             self.model = RNN(brain_embed_size,args['word_embed_size'], device)
-
-#     def forward(self, x, position_index = False):
-#         # x: batch_size * seq_len * dim
-#         return self.model(x, position_index = position_index)
-
 class Encoding_model(nn.Module):
-    def __init__(self, args, brain_embed_size=None, device=None, pos_vocab_size=50):
+    def __init__(self, args,brain_embed_size=None,device=None):
         super(Encoding_model, self).__init__()
         if brain_embed_size is None:
             brain_embed_size = args['brain_embed_size']
-        self.device = device
-        self.pos_embedding = nn.Embedding(pos_vocab_size, args['word_embed_size'])  # POSタグのエンベディング層
-        self.brain_mlp = nn.Linear(brain_embed_size, args['word_embed_size'])  # 脳情報のエンベディング層
-        self.combiner = nn.Linear(args['word_embed_size'] * 2, args['word_embed_size'])  # 統合層
+        if args['brain_model'] == 'multi_mlp':
+            self.model = MultiMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
+        elif args['brain_model'] == 'big_mlp':
+            self.model = BigMLP(brain_embed_size,args['word_embed_size'],position_index = False, args = args)
+        elif args['brain_model'] == 'linear':
+            self.model = Linear(brain_embed_size,args['word_embed_size'], args,)
+        elif args['brain_model'] == 'mlp':
+            self.model = MLP(brain_embed_size,args['word_embed_size'],position_index = args['pos'], args = args)
+        elif args['brain_model'] == 'rnn':
+            self.model = RNN(brain_embed_size,args['word_embed_size'], device)
 
-    def forward(self, brain_features, pos_tags):
-        # 脳情報をエンベディング
-        brain_embeds = self.brain_mlp(brain_features)
-        # POSタグをエンベディング
-        pos_embeds = self.pos_embedding(pos_tags)
-        # 統合（単純な結合 + 線形変換）
-        combined_features = torch.cat((brain_embeds, pos_embeds), dim=-1)
-        combined_embeds = self.combiner(combined_features)
-        return combined_embeds
+    def forward(self, x, position_index = False):
+        # x: batch_size * seq_len * dim
+        return self.model(x, position_index = position_index)
+
+# class Encoding_model(nn.Module):
+#     def __init__(self, args, brain_embed_size=None, device=None, pos_vocab_size=100):
+#         super(Encoding_model, self).__init__()
+#         if brain_embed_size is None:
+#             brain_embed_size = args['brain_embed_size']
+#         self.device = device
+#         self.pos_embedding = nn.Embedding(pos_vocab_size, args['word_embed_size'])  # POSタグのエンベディング層
+
+#         # args['brain_model'] によってモデルを選択
+#         if args['brain_model'] == 'multi_mlp':
+#             self.model = MultiMLP(brain_embed_size, args['word_embed_size'], position_index=False, args=args)
+#         elif args['brain_model'] == 'big_mlp':
+#             self.model = BigMLP(brain_embed_size, args['word_embed_size'], position_index=False, args=args)
+#         elif args['brain_model'] == 'linear':
+#             self.model = Linear(brain_embed_size, args['word_embed_size'], args=args)
+#         elif args['brain_model'] == 'mlp':
+#             self.model = MLP(brain_embed_size, args['word_embed_size'], position_index=args['pos'], args=args)
+#         elif args['brain_model'] == 'rnn':
+#             self.model = RNN(brain_embed_size, args['word_embed_size'], device)
+#         else:
+#             raise ValueError(f"Unsupported brain_model: {args['brain_model']}")
+
+#         # POSと脳情報を統合する結合層
+#         self.combiner = nn.Linear(args['word_embed_size'] * 2, args['word_embed_size'])
+
+#     def forward(self, brain_features, pos_tags=None):
+#         # 脳情報をエンコード
+#         brain_embeds = self.model(brain_features)
+
+#         if pos_tags is not None:
+#             # POSタグをエンベディング
+#             pos_embeds = self.pos_embedding(pos_tags)
+#             # POSエンベディングと脳情報エンベディングを結合
+#             combined_features = torch.cat((brain_embeds, pos_embeds), dim=-1)
+#             combined_embeds = self.combiner(combined_features)
+#         else:
+#             combined_embeds = brain_embeds  # POSタグがない場合は脳情報のみを使用
+
+#         return combined_embeds
+

@@ -10,6 +10,7 @@ from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 from scipy import stats
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
 rouge = Rouge()
 chencherry = SmoothingFunction()
@@ -87,7 +88,7 @@ def preprocess_re(re, mask=None,dataset_name=None):
 def language_evaluate_mask_with_sig(re, mask=None, dataset_name=None):
     re['content_pred_old'] = copy.deepcopy(re['content_pred'])
     re = preprocess_re(re, mask, dataset_name = dataset_name)
-    
+
     rouge = Rouge()
     try:
         rouge_scores = rouge.get_scores(re['content_pred'],re['content_true'], avg = False)
@@ -101,17 +102,17 @@ def language_evaluate_mask_with_sig(re, mask=None, dataset_name=None):
         except:
             for idx in range(len(re['content_pred'])):
                 rouge_scores = rouge.get_scores([re['content_pred'][idx]],[re['content_true'][idx]], avg = False)
-    
+
     re['first_match'] = []
     for i in range(len(re['content_pred_tokens'])):
         if len(re['content_pred_tokens'][i]) > 0:
             re['first_match'].append(re['content_true_tokens'][i][0][0]==re['content_pred_tokens'][i][0])
-        
+
     re['rouge_scores'] = {'rouge-1':{'r':[]},'rouge-l':{'r':[]},}
     for item in rouge_scores:
         re['rouge_scores']['rouge-1']['r'].append(item['rouge-1']['r'])
         re['rouge_scores']['rouge-l']['r'].append(item['rouge-l']['r'])
-        
+
     weights_list = [(1.0,),(0.5,0.5),(1./3.,1./3.,1./3.),(0.25,0.25,0.25,0.25)]
     re['corpus_bleu_score'] = {}
     for weight in weights_list:
@@ -141,10 +142,10 @@ def get_results(path_name, print_log=False, file_name = 'test.json'):
 def get_result_dic_mode():
     return {'bert_scores_part':[], 'bert_scores':[], 'valid_loss':[], 'corpus_bleu_score':{1:[],2:[],3:[],4:[]}, 'rouge_scores': {'rouge-1':{'r':[]}, 'rouge-l':{'r':[]}}, 'content_prev':[], 'content_pred':[], 'content_true':[],'content_pred_old':[],'content_prev_tokens_length':[],'first_match':[], 'u':[], 'wer':[]}
 
-def get_iterate_results_split(path_name_list, print_log=False, ):  
-    u2result_list = {}    
+def get_iterate_results_split(path_name_list, print_log=False, ):
+    u2result_list = {}
     for u, item in enumerate(path_name_list):
-        path_name = item['path_name'] 
+        path_name = item['path_name']
         file_name = item['file_name']
         result = get_results(path_name, print_log=False, file_name=file_name)
         if result is None:
@@ -152,6 +153,26 @@ def get_iterate_results_split(path_name_list, print_log=False, ):
         u2result_list[u]  = result
     return u2result_list
 
+def save_evaluation_results(results, checkpoint_path, file_name="evaluation_results"):
+    # 数値型のリストにのみ np.mean を適用
+    ignore_keys = ['content_pred', 'content_true', 'content_prev']
+    flattened_results = {
+        key: np.mean(value) if key not in ignore_keys and isinstance(value, list) and all(isinstance(v, (int, float)) for v in value) else value
+        for key, value in results.items()
+    }
+
+    # JSON の保存パス
+    json_path = os.path.join(checkpoint_path, file_name + '.json')
+    with open(json_path, 'w') as json_file:
+        json.dump(flattened_results, json_file, indent=4)
+
+    # CSV の保存パス
+    csv_path = os.path.join(checkpoint_path, file_name + '.csv')
+
+    # 結果をデータフレームに変換して CSV に保存
+    df = pd.DataFrame([flattened_results])
+    df.to_csv(csv_path, index=False)
+    
 def multi_add(dic, times = 10):
     new_dic = get_result_dic_mode()
     u_list = set(dic['u'])
@@ -166,8 +187,8 @@ def merge(u2result, user_list = None):
     if user_list == None:
         user_list = u2result.keys()
     for u in user_list:
-        add2result_dic(result, u2result[u], u)   
-    return result 
+        add2result_dic(result, u2result[u], u)
+    return result
 
 def get_iterate_results(path_name, print_log = False, ):
     u2result_list = get_iterate_results_split(path_name, print_log=False, )
@@ -245,9 +266,9 @@ if __name__ == '__main__':
             model_result = multi_add(model_result)
         else:
             print("Error: length of data samples in the proposed model and the control model doesn't not match")
-    
+
     show_significance(model_result, control_result)
-    
+
     # comparing BrainLLM and StdLLM
     base_path = '../results/'
     model_dir_list = [{'path_name':base_path + result_path, 'file_name':'test.json'}]
@@ -259,5 +280,5 @@ if __name__ == '__main__':
             model_result = multi_add(model_result)
         else:
             print("Error: length of data samples in the proposed model and the control model doesn't not match")
-    
+
     show_significance(model_result, control_result)

@@ -2,7 +2,7 @@ import pickle
 import csv
 
 # Load the dictionary from the file
-with open('データディレクトリ名', 'rb') as f:
+with open('dataset/Huth/2.pca1000.wq.pkl.dic', 'rb') as f:
     data = pickle.load(f)
 
 # Process the data to reformat the 'words' content
@@ -16,7 +16,7 @@ for key, value in data.items():
         output_data[key] = formatted_text
 
 # Save the reformatted data to a CSV file
-with open('dataset_text/Huth_sentence.csv', 'w', newline='', encoding='utf-8') as csvfile:
+with open('dataset_text/test_sentence.csv', 'w', newline='', encoding='utf-8') as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow(['Key', 'FormattedText'])
     for key, formatted_text in output_data.items():
