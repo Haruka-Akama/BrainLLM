@@ -245,7 +245,7 @@ class Decoding_model:
         return default_collate(padded_batch)
 
     def valid(self, test_dataset):
-        test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=1)
+        test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=0)
         re = []
         self.prompt_model.eval()
         for content_prev, additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask, content_all, content_all_mask, data_id in tqdm.tqdm(test_dataloader, mininterval=300):
@@ -261,7 +261,7 @@ class Decoding_model:
         return re
 
     def test(self, test_dataset, file_name=None):
-        test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=1)
+        test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=0)
         re = {'valid_loss':[], 'content_pred':[], 'content_true':[], 'content_prev':[],'content_pred_token_ids':[],'content_prev_tokens_length':[],'data_id':[]}
         self.prompt_model.eval()
         if self.args['generation_method'] == 'greedy':
@@ -328,9 +328,9 @@ class Decoding_model:
         return total_additional_loss / len(dataset)
 
     def train(self, train_dataset, valid_dataset, test_dataset=None):
-        test_dataloader = DataLoader(test_dataset, batch_size = self.args['batch_size'], shuffle=False, num_workers=1) if test_dataset is not None else None
-        train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
-        valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
+        test_dataloader = DataLoader(test_dataset, batch_size = self.args['batch_size'], shuffle=False, num_workers=0) if test_dataset is not None else None
+        train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=0)
+        valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=0)
 
         best_loss = 100000000000
         # 改了early stop
@@ -367,7 +367,7 @@ class Decoding_model:
             self.prompt_model.train()
             if 'Narratives' in self.args['task_name'] and 'person' not in self.args['task_name']:
                 random.shuffle(train_dataset.inputs)
-                train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
+                train_dataloader = DataLoader(train_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=0)
             for content_prev, additional_bs, content_prev_sep, content_true,content_prev_mask,content_true_mask, content_all, content_all_mask, data_id in tqdm.tqdm(train_dataloader, mininterval=300):
                 content_prev, additional_bs,content_prev_sep, content_true, content_prev_mask, content_true_mask, additional_bs_mask = self.put_data_into_cuda(content_prev,additional_bs, content_prev_sep, content_true, content_prev_mask, content_true_mask)
                 content_all, content_all_mask = content_all.to(self.device), content_all_mask.to(self.device)
@@ -386,7 +386,7 @@ class Decoding_model:
                     continue
                 if self.args['additional_loss'] > 0:
                     additional_loss1 = self.prompt_model.additional_loss(content_prev, content_prev_mask, additional_bs)
-                    valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=1)
+                    valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=0)
                     for content_prev_v, additional_bs_v, v_1, v_2,content_prev_mask_v,v_3, v_4, v_5 in valid_dataloader:
                         if self.args['model_name'] in ['llama-7b', 'vicuna-7b', 'llama-7b-old']:
                             additional_bs_v = additional_bs_v.half()

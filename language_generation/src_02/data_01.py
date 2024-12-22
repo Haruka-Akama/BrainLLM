@@ -1,6 +1,7 @@
 import pickle
 from torch.utils.data import Dataset
 import torch
+from torch import tensor, cat
 import numpy as np
 import random
 import gc
@@ -9,106 +10,45 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer, GPT2Model
-
-
-from transformers import GPT2Tokenizer, GPT2Model
-import torch
+import nltk
+nltk.download('punkt')
+nltk.download('averaged_perceptron_tagger')
 import pickle
-import numpy as np
 
-class POSTagEmbedderGPT2:
-    def __init__(self, model_name='gpt2', device='cpu'):
+
+class POSTagEmbedder:
+    def __init__(self, embedding_dim=50, device='cpu'):
+        """
+        :param embedding_dim: POSタグを埋め込むベクトルの次元数
+        :param device: PyTorchのデバイス（CPUまたはGPU）
+        """
+        self.embedding_dim = embedding_dim
         self.device = device
-        self.tokenizer = GPT2Tokenizer.from_pretrained(model_name)
-        self.model = GPT2Model.from_pretrained(model_name).to(self.device)
-        self.tokenizer.pad_token = self.tokenizer.eos_token  # GPT-2ではPADトークンが必要
+        self.pos_to_idx = {}
+        self.embeddings = None
 
-    def embed_tags(self, pos_tags):
-        # POSタグをトークン化してテンソルに変換
-        inputs = self.tokenizer(pos_tags, return_tensors="pt", padding=True, truncation=True).to(self.device)
-        with torch.no_grad():
-            outputs = self.model(**inputs)
-        # 最後のトークンのベクトルを平均して埋め込みとして使用
-        return outputs.last_hidden_state.mean(dim=1).cpu()
-
-class POSIntegrator:
-    def __init__(self, embedder, device='cpu', scaler=None):
+    def build_pos_vocab(self, pos_tagged_sentences):
         """
-        :param embedder: POSTagEmbedderGPT2のインスタンス
-        :param device: 使用するデバイス（CPUまたはGPU）
-        :param scaler: オプションのスケーラー（標準化用）
+        POSタグの語彙を構築する
+        :param pos_tagged_sentences: POSタグのリスト [['NN', 'VB'], ['JJ', 'NN'], ...]
         """
-        self.embedder = embedder
-        self.device = device
-        self.scaler = scaler
+        unique_tags = set(tag for sentence in pos_tagged_sentences for _, tag in sentence)
+        self.pos_to_idx = {tag: idx for idx, tag in enumerate(unique_tags)}
 
-    def process_and_integrate(self, dataset_file):
+        # 埋め込み行列を初期化
+        self.embeddings = torch.nn.Embedding(len(self.pos_to_idx), self.embedding_dim).to(self.device)
+
+    def embed_pos_tags(self, pos_tags):
         """
-        データセットを処理してPOS埋め込みを生成し、additional_bsと統合
-        :param dataset_file: データセットのファイルパス
+        POSタグを埋め込みベクトルに変換する
+        :param pos_tags: POSタグのリスト ['NN', 'VB', 'DT', ...]
+        :return: 埋め込みベクトル（Tensor）
         """
-        with open(dataset_file, 'rb') as f:
-            dataset = pickle.load(f)
-
-        for story_id, story_data in dataset.items():
-            if isinstance(story_data, dict):
-                index2trial = story_data.get('index2trial', [])
-                fmri_data = story_data.get('fmri', [])
-
-                # index2trial または fmri_data が空の場合にスキップ
-                if not isinstance(index2trial, dict) or not isinstance(fmri_data, (list, np.ndarray)) or len(fmri_data) == 0:
-                    print(f"Skipping story {story_id} due to missing or invalid 'index2trial' or 'fmri'.")
-                    continue
-
-                for item_id, item in enumerate(story_data.get('words', [])):
-                    if isinstance(item, dict) and 'word' in item:
-                        words = [w['content'] for w in item['word']]
-                        pos_tags = " ".join(words)
-
-                        # POS埋め込みを生成
-                        pos_embedding = self.embedder.embed_tags(pos_tags)
-
-                        # fMRI埋め込み取得
-                        trial_index = index2trial.get(str(item_id))
-                        if trial_index is None or trial_index >= len(fmri_data):
-                            print(f"Warning: trial_index {trial_index} out of range for story {story_id}, item {item_id}. Skipping.")
-                            continue
-
-                        fmri_embedding = torch.tensor(fmri_data[trial_index], dtype=torch.float32)
-
-                        # 正規化（必要なら）
-                        if self.scaler:
-                            fmri_embedding = torch.tensor(self.scaler.transform(fmri_embedding.numpy()), dtype=torch.float32)
-
-                        # POS埋め込みとfMRI埋め込みを統合
-                        combined_embedding = torch.cat((fmri_embedding, pos_embedding), dim=-1)
-                        print(f"Story {story_id}, Item {item_id}: Combined embedding shape: {combined_embedding.shape}")
-
-    def integrate(self, dataset):
-        """
-        データセット内のadditional_bsにPOSタグの埋め込みを統合
-        :param dataset: 既存のデータセット（リスト形式）
-        :return: POS埋め込みを統合したデータセット
-        """
-        for item in dataset.inputs:
-            key = str(item['id'])  # データセット内のキーを取得
-
-            # fMRI埋め込み
-            fmri_embedding = torch.tensor(item['additional_bs'], dtype=torch.float32)
-
-            # POS埋め込みを生成
-            pos_tags = " ".join(self.pos_tag_mapping.get(key, []))
-            pos_embedding = self.embedder.embed_tags(pos_tags)
-
-            # 正規化（必要なら）
-            if self.scaler:
-                fmri_embedding = torch.tensor(self.scaler.transform(fmri_embedding.numpy()), dtype=torch.float32)
-
-            # fMRI埋め込みとPOS埋め込みを結合
-            combined_embedding = torch.cat((fmri_embedding, pos_embedding), dim=-1)
-            item['additional_bs'] = combined_embedding
-
-        return dataset
+        if not self.pos_to_idx:
+            raise ValueError("POS語彙が空です。まず build_pos_vocab を呼び出してください。")
+        indices = [self.pos_to_idx.get(tag, 0) for tag in pos_tags]  # 語彙にないタグは 0 とする
+        indices_tensor = torch.tensor(indices, dtype=torch.long).to(self.device)
+        return self.embeddings(indices_tensor).mean(dim=0)  # 平均ベクトルを返す
 
 
 class MyStandardScaler:
@@ -215,6 +155,9 @@ class FMRI_dataset():
         self.tokenizer = tokenizer
         id2info = {}
         tmp_id = 0
+        device = torch.device(f"cuda:{args['cuda']}" if torch.cuda.is_available() and 'cuda' in args else 'cpu')
+
+        all_content_list = []
         if 'Pereira' in args['task_name']:
             dataset_name, subject_name = args['task_name'].split('_')
             pere_dataset = pickle.load(open(f'{dataset_path}/{subject_name}.pca1000.wq.pkl.dic','rb')) if args['fmri_pca'] else pickle.load(open(f'{dataset_path}/{subject_name}.wq.pkl.dic','rb'))
@@ -224,8 +167,41 @@ class FMRI_dataset():
                 for item_id, item in enumerate(input_dataset[story]):
                     for k in range(1, len(item['word'])):
                         content_prev = ' '.join([item['word'][j]['content'] for j in range(0,k)])
+                        content_true = item['word'][k]['content']
+                        all_content = content_prev + ' ' + content_true
+                        all_content_list.append(all_content)
+            embedder = POSTagEmbedder(embedding_dim=50, device=device)
+            pos_tagged_sentences = [[(word, pos) for word, pos in nltk.pos_tag(nltk.word_tokenize(content))] for content in all_content_list]
+            embedder.build_pos_vocab(pos_tagged_sentences)
+            for story in input_dataset.keys():
+                for item_id, item in enumerate(input_dataset[story]):
+                    for k in range(1, len(item['word'])):
+                        content_prev = ' '.join([item['word'][j]['content'] for j in range(0,k)])
                         additional_bs = np.array([pere_dataset[story]['fmri'][idx] for idx in item['word'][k]['additional']])
                         content_true = item['word'][k]['content']
+                        all_content = content_prev + ' ' + content_true
+                       # POSタグの埋め込み
+                        embedded_pos = embedder.embed_pos_tags(all_content)  # 例: [50]
+                        embedded_pos = torch.tensor(embedded_pos, dtype=torch.float32)
+
+                        # fMRI データの取得
+                        additional_bs = np.array([pere_dataset[story]['fmri'][idx] for idx in item['word'][k]['additional']])
+                        additional_bs = torch.tensor(additional_bs, dtype=torch.float32)
+
+                        # デバイスを統一
+                        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+                        additional_bs = additional_bs.to(device)
+                        embedded_pos = embedded_pos.unsqueeze(0).to(device)
+
+                        # 次元拡張
+                        repeat_times = additional_bs.size(1) // embedded_pos.size(1)
+                        if additional_bs.size(1) % embedded_pos.size(1) != 0:
+                            raise ValueError("additional_bs.size(1) is not divisible by embedded_pos.size(1)")
+
+                        embedded_pos = embedded_pos.repeat(1, repeat_times)
+                        # 結合
+                        combined_input = torch.cat([additional_bs, embedded_pos], dim=1)
+                        all_content_list.append(all_content)
                         if args['add_end']:
                             content_true += '<|endoftext|>'
                         random_number = random.random()
@@ -315,6 +291,9 @@ class FMRI_dataset():
                             self.inputs = self.inputs[:-1]
         self.pack_data_from_input(args)
         json.dump(id2info, open(self.args['checkpoint_path']+'/'+'id2info.json', 'w'))
+        print("--- All Content (First 3 Examples) ---")
+        for i, content in enumerate(all_content_list[:3]):
+            print(f"Example {i + 1}: {content}")
 
         if args['use_bad_words_ids']:
             self.get_bad_word_ids()

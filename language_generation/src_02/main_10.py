@@ -1,5 +1,5 @@
 from config_00 import get_config
-from data_01 import FMRI_dataset, POSIntegrator, POSTagEmbedderGPT2
+from data_01 import FMRI_dataset
 import pickle
 import random
 import numpy as np
@@ -53,21 +53,6 @@ if __name__ == '__main__':
 
     print('dataset initialized')
 
-    device = torch.device(f"cuda:{args['cuda']}" if torch.cuda.is_available() and 'cuda' in args else 'cpu')
-
-    # GPT-2埋め込みモデルを初期化
-    embedder = POSTagEmbedderGPT2(device=device)
-
-    # POS統合器を初期化
-    integrator = POSIntegrator(embedder=embedder, device=device)
-
-    # データセットを処理して統合
-    print("Processing and integrating dataset...")
-    processed_dataset = integrator.process_and_integrate(args['dataset_file'])
-
-    print("Saving processed dataset...")
-
-
     if args['mode'] in ['train','only_train','all']:
         decoding_model.train(dataset.train_dataset, dataset.valid_dataset)
 
@@ -93,4 +78,4 @@ if __name__ == '__main__':
         args['mode'] = 'evaluate' if args['mode'] == 'train' else args['mode']
         decoding_model.args['load_check_point'] = True
         decoding_model.load_check_point()
-        decoding_model.test(dataset.test_dataset, args['output'])
+    decoding_model.test(dataset.test_dataset, args['output'])
