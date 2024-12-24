@@ -10,11 +10,17 @@ import copy
 from sklearn.preprocessing import StandardScaler
 from torch.nn.utils.rnn import pad_sequence
 from transformers import GPT2Tokenizer, GPT2Model
-import nltk
-nltk.download('punkt')
-nltk.download('averaged_perceptron_tagger')
+# import nltk
+# nltk.download('punkt')
+# nltk.download('averaged_perceptron_tagger')
+import benepar
+import spacy
 import pickle
 
+# beneparのセットアップ
+benepar.download('benepar_en3')
+nlp = spacy.load('en_core_web_md')  # spaCyモデルのロード
+nlp.add_pipe("benepar", config={"model": "benepar_en3"})  # beneparを追加
 
 class POSTagEmbedder:
     def __init__(self, embedding_dim=50, device='cpu'):
@@ -32,10 +38,17 @@ class POSTagEmbedder:
         POSタグの語彙を構築する
         :param pos_tagged_sentences: POSタグのリスト [['NN', 'VB'], ['JJ', 'NN'], ...]
         """
-        unique_tags = set(tag for sentence in pos_tagged_sentences for _, tag in sentence)
-        self.pos_to_idx = {tag: idx for idx, tag in enumerate(unique_tags)}
+        # unique_tags = set(tag for sentence in pos_tagged_sentences for _, tag in sentence)
+        # self.pos_to_idx = {tag: idx for idx, tag in enumerate(unique_tags)}
 
-        # 埋め込み行列を初期化
+        # # 埋め込み行列を初期化
+        # self.embeddings = torch.nn.Embedding(len(self.pos_to_idx), self.embedding_dim).to(self.device)
+
+        print("--- Debugging Unique POS Tags ---")
+        unique_tags = set(tag for sentence in pos_tagged_sentences for _, tag in sentence)
+        print(f"Unique Tags: {unique_tags}")
+        self.pos_to_idx = {tag: idx for idx, tag in enumerate(unique_tags)}
+        print(f"POS Vocabulary: {self.pos_to_idx}")
         self.embeddings = torch.nn.Embedding(len(self.pos_to_idx), self.embedding_dim).to(self.device)
 
     def embed_pos_tags(self, pos_tags):
@@ -171,8 +184,12 @@ class FMRI_dataset():
                         all_content = content_prev + ' ' + content_true
                         all_content_list.append(all_content)
             embedder = POSTagEmbedder(embedding_dim=50, device=device)
-            pos_tagged_sentences = [[(word, pos) for word, pos in nltk.pos_tag(nltk.word_tokenize(content))] for content in all_content_list]
+            # POSタグ付き文のリストを作成
+            pos_tagged_sentences = [
+                [(token.text, token.pos_) for token in nlp(content)] for content in all_content_list]
+
             embedder.build_pos_vocab(pos_tagged_sentences)
+
             for story in input_dataset.keys():
                 for item_id, item in enumerate(input_dataset[story]):
                     for k in range(1, len(item['word'])):
@@ -180,8 +197,12 @@ class FMRI_dataset():
                         additional_bs = np.array([pere_dataset[story]['fmri'][idx] for idx in item['word'][k]['additional']])
                         content_true = item['word'][k]['content']
                         all_content = content_prev + ' ' + content_true
-                       # POSタグの埋め込み
-                        embedded_pos = embedder.embed_pos_tags(all_content)  # 例: [50]
+
+                        tokens = nlp(all_content)
+                        pos_tags = [token.pos_ for token in tokens]
+
+                        # POSタグの埋め込み
+                        embedded_pos = embedder.embed_pos_tags(pos_tags)
                         embedded_pos = torch.tensor(embedded_pos, dtype=torch.float32)
 
                         # fMRI データの取得

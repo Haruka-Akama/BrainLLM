@@ -235,15 +235,6 @@ class Decoding_model:
         if file_name is not None:
             json.dump(re, open(self.args['checkpoint_path']+'/'+file_name+'.json', 'w'))
 
-    def custom_collate_fn(batch):
-        max_len = max(item['additional_bs'].shape[0] for item in batch)
-        padded_batch = []
-        for item in batch:
-            padding = torch.zeros(max_len - item['additional_bs'].shape[0], item['additional_bs'].shape[1])
-            item['additional_bs'] = torch.cat((item['additional_bs'], padding), dim=0)
-            padded_batch.append(item)
-        return default_collate(padded_batch)
-
     def valid(self, test_dataset):
         test_dataloader = DataLoader(test_dataset, batch_size = 4 if self.args['model_name'] in ['llama-7b'] and self.args['batch_size'] > 4 else self.args['batch_size'] , shuffle=False, num_workers=0)
         re = []
@@ -333,7 +324,6 @@ class Decoding_model:
         valid_dataloader = DataLoader(valid_dataset, batch_size = self.args['batch_size'], shuffle=True, num_workers=0)
 
         best_loss = 100000000000
-        # 改了early stop
         early_stop = self.args['early_stop']
         early_stop_epochs = 0
         parameters = []

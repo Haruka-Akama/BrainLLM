@@ -20,7 +20,7 @@ torch.cuda.manual_seed_all(seed)
 if __name__ == '__main__':
     args = get_config()  # argsは辞書形式
 
-    save_name = 'language_generation/results'
+    save_name = 'language_generation/results/BrainLLM_with_POS/'
     for key in args.keys():
         if key != 'cuda':
             save_name += key + '(' + str(args[key]) + ')_'
@@ -30,18 +30,20 @@ if __name__ == '__main__':
     dataset_class = FMRI_dataset
     dataset_name = args['task_name'].split('_')[0]
     subject_name = args['task_name'].split('_')[1]
-    if 'example' not in args['task_name']:
-        args['dataset_path'] = os.path.join(args['dataset_path'], dataset_name)
+    # if 'example' not in args['task_name']:
+    #     args['dataset_path'] = os.path.join(args['dataset_path'], dataset_name)
     dataset_path = args['dataset_path']
 
     if 'Huth' in args['task_name']:
         input_dataset = pickle.load(open(f'{dataset_path}/{subject_name}.wq.pkl', 'rb'))
         decoding_model = Decoding_model(args)
         dataset = dataset_class(input_dataset, args, tokenizer=decoding_model.tokenizer, decoding_model=decoding_model)
+
     elif 'Pereira' in args['task_name']:
         input_dataset = pickle.load(open(f'{dataset_path}/{subject_name}.wq.pkl', 'rb'))
         decoding_model = Decoding_model(args)
         dataset = dataset_class(input_dataset, args, tokenizer=decoding_model.tokenizer, decoding_model=decoding_model)
+
     elif 'Narratives' in args['task_name']:
         u2s = json.load(open(f'dataset_info/u2s.json'))
         args['Narratives_stories'] = u2s[f'sub-{subject_name}']
@@ -79,3 +81,4 @@ if __name__ == '__main__':
         decoding_model.args['load_check_point'] = True
         decoding_model.load_check_point()
     decoding_model.test(dataset.test_dataset, args['output'])
+

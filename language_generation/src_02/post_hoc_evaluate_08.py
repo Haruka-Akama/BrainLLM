@@ -233,31 +233,42 @@ def is_only_dot_space(text):
         return False
 
 if __name__ == '__main__':
-    result_path = 'example'
-    # comparing BrainLLM and PerBrainLLM
-    base_path = 'language_generation/results/'
-    model_dir_list = [{'path_name':base_path + result_path, 'file_name':'test.json'}]
-    control_dir_list = [{'path_name':base_path + result_path, 'file_name':'test_permutated.json'}]
+    result_path = 'language_generation/results/test.json'  # モデルの結果ファイルのパス
+
+    # モデルの結果を取得
+    model_dir_list = [{'path_name': os.path.dirname(result_path), 'file_name': os.path.basename(result_path)}]
     model_result = get_iterate_results(model_dir_list, print_log=True)
-    control_result = get_iterate_results(control_dir_list)
-    if len(model_result['content_prev']) < len(control_result['content_prev']):
-        if len(model_result['content_prev']) * 10 == len(control_result['content_prev']):
-            model_result = multi_add(model_result)
-        else:
-            print("Error: length of data samples in the proposed model and the control model doesn't not match")
 
-    show_significance(model_result, control_result)
+    # 結果が正しく取得できた場合
+    if model_result:
+        # 各指標を計算
+        print("### Evaluation Metrics for Single Model ###")
+        bleu_score_1 = np.mean(model_result['corpus_bleu_score'][1])
+        rouge_1 = np.mean(model_result['rouge_scores']['rouge-1']['r'])
+        rouge_l = np.mean(model_result['rouge_scores']['rouge-l']['r'])
+        valid_loss = np.mean(model_result['valid_loss'])
+        wer_score = np.mean(model_result['wer'])
 
-    # comparing BrainLLM and StdLLM
-    base_path = 'language_generation/results'
-    model_dir_list = [{'path_name':base_path + result_path, 'file_name':'test.json'}]
-    control_dir_list = [{'path_name':base_path + result_path, 'file_name':'test_nobrain.json'}]
-    model_result = get_iterate_results(model_dir_list)
-    control_result = get_iterate_results(control_dir_list)
-    if len(model_result['content_prev']) < len(control_result['content_prev']):
-        if len(model_result['content_prev']) * 10 == len(control_result['content_prev']):
-            model_result = multi_add(model_result)
-        else:
-            print("Error: length of data samples in the proposed model and the control model doesn't not match")
+        # 結果を表示
+        print(f"BLEU-1: {bleu_score_1:.4f}")
+        print(f"ROUGE-1: {rouge_1:.4f}")
+        print(f"ROUGE-L: {rouge_l:.4f}")
+        print(f"Validation Loss: {valid_loss:.4f}")
+        print(f"WER: {wer_score:.4f}")
 
-    show_significance(model_result, control_result)
+        # 保存するデータを作成
+        results_to_save = {
+            "BLEU-1": bleu_score_1,
+            "ROUGE-1": rouge_1,
+            "ROUGE-L": rouge_l,
+            "Validation Loss": valid_loss,
+            "WER": wer_score
+        }
+
+        # 結果を保存する
+        output_file = 'language_generation/results/results_summary.json'  # 保存するファイルのパス
+        with open(output_file, 'w') as f:
+            json.dump(results_to_save, f, indent=4)
+        print(f"Summary results saved to {output_file}")
+    else:
+        print("Error: Failed to retrieve results. Please check the file path.")

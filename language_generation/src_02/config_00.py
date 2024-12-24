@@ -24,8 +24,10 @@ def get_config():
     parser.add_argument('-model_name', help='choose from {gpt2,gpt2-medium,gpt2-large,gpt2-xl,llama-2, huth}', default = "gpt2" ,required=False)
     parser.add_argument('-method', help='choose from {decoding}', default = "decoding" ,required=False)
     parser.add_argument('-task_name', help='examples: Pereira_example', default = "Pereira_example" ,required=False)
-    parser.add_argument('-test_trail_ids', default = "", required=False)
-    parser.add_argument('-valid_trail_ids', default = "", required=False)
+    parser.add_argument('-test_trail_ids', type=json.loads, default="[0.7, 1.0]", required=False,
+                        help="List of test trail IDs in JSON format (e.g., '[0.7, 1.0]')")
+    parser.add_argument('-valid_trail_ids', type=json.loads, default="[0.5, 0.7]", required=False,
+                        help="List of valid trail IDs in JSON format (e.g., '[0.5, 0.7]')")
     parser.add_argument('-random_number', default = 1, type = int, required=False)
     parser.add_argument('-batch_size', default = 1, type = int, required=False)
     parser.add_argument('-fmri_pca', default = "True" ,required=False)
@@ -80,7 +82,7 @@ def get_config():
     parser.add_argument('-beam_width', default = 5, type=int, required=False)
     parser.add_argument('-extensions', default = 5, type=int, required=False)
     parser.add_argument('-save_results', action='store_true', help="Flag to save evaluation results to file")
-    parser.add_argument('-dataset_file', type=str, required=True, help="Path to the dataset file (pickle format)")
+    # parser.add_argument('-dataset_file', type=str, required=True, help="Path to the dataset file (pickle format)")
     args = vars(parser.parse_args())
     args['fmri_pca'] = args['fmri_pca'] == 'True'
     args['load_check_point'] = args['load_check_point'] == 'True'
@@ -100,11 +102,8 @@ def get_config():
             args[k] = v
     args['test_trail_ids'] = [args['test_trail_ids'][0]+args['random_number']*0.2, args['test_trail_ids'][1]+args['random_number']*0.2]
     args['valid_trail_ids'] = [args['valid_trail_ids'][0]+args['random_number']*0.2, args['valid_trail_ids'][1]+args['random_number']*0.2]
-    args['test_trail_ids'] = [0.75, 1.0]
-    args['valid_trail_ids'] = [0.5, 0.75]
 
-
-    args['checkpoint_path'] = 'language_generation/save'
+    args['checkpoint_path'] = 'language_generation/results'
 
     # set shuffle_times
     shuffle_times = 10 if 'Huth' not in args['task_name'] and 'Narratives' not in args['task_name'] else 1
@@ -113,9 +112,9 @@ def get_config():
     # manage checkpoint_path
     results_path =  args['results_path']
     if args['checkpoint_path'] == '':
-        args['checkpoint_path'] = 'language_generation/save'
+        args['checkpoint_path'] = 'language_generation/results'
     elif f'{results_path}/' not in args['checkpoint_path']:
-        args['checkpoint_path'] = 'language_generation/save'
+        args['checkpoint_path'] = 'language_generation/results'
 
     if os.path.exists(args['checkpoint_path']) == False:
         os.makedirs(args['checkpoint_path'])
